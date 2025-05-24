@@ -1,14 +1,16 @@
 import pygame
 import sys
 import random
+import numpy as np
 
 pygame.init()
 
 SCREEN_WIDTH, SCREEN_HEIGHT = 400, 400
+BLOCK_SIZE = 20
+
 window = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 window.fill(pygame.Color('black'))
 font = pygame.font.SysFont(None, 30)
-BLOCK_SIZE = 20
 clock = pygame.time.Clock()
 
 # snake initialization
@@ -45,12 +47,12 @@ def move_snake():
     new_head = (x + (dx * BLOCK_SIZE), y + (dy * BLOCK_SIZE))
     
 
-    # collision detection
+    # wall collision detection
     x, y = new_head
     if x < 0 or x >= SCREEN_WIDTH or y < 0 or y >= SCREEN_HEIGHT:
         snake_alive = False
 
-    # check if new head collisions with 
+    # check if new head collisions with body before insertion
     if new_head in snake_body:
         snake_alive = False
 
@@ -78,17 +80,78 @@ def randomize_food():
         food = (random.randrange(0, SCREEN_WIDTH, BLOCK_SIZE), random.randrange(0, SCREEN_HEIGHT, BLOCK_SIZE))
 
 def reset():
-    global snake_alive
-    global snake_size
-    global snake_body
-    global snake_dir
-    global next_dir
+    global snake_alive, snake_size, snake_body, snake_dir, next_dir
 
     snake_alive = True
     snake_size = 3
     snake_body = [(initial_x, initial_y), (initial_x-BLOCK_SIZE, initial_y), (initial_x-(BLOCK_SIZE * 2), initial_y)]
     snake_dir = (1, 0)
     next_dir = snake_dir
+
+# Game Environment Interface for RL
+
+def get_observation():
+    
+    # 20x20x3, where its represnted as [is_snake_here, is_food_here, is_empty_here] and each value must be mutually exclusive with only one '1' per 3D array
+    grid = np.zeros((SCREEN_WIDTH // BLOCK_SIZE, SCREEN_HEIGHT // BLOCK_SIZE, 3), dtype=np.float32)
+
+    # index 0 is for snake body
+    # 1 for true, 0 for false ^
+    for (x, y) in snake_body:
+        grid[y // BLOCK_SIZE][x // BLOCK_SIZE][0] = 1 
+
+    # index 1 is for food
+    fx, fy = food
+    grid[fy // BLOCK_SIZE, fx // BLOCK_SIZE][1] = 1 
+
+    # index 2 is for empty tile
+    # 1 - food - snake, since either the tile is food or snake so if theres food then 1-1-0 = 0 so false
+    grid[:, :, 2] = 1 - grid[:, :, 1] - grid[:, :, 0]
+
+    return grid.flatten() # converts multi-D array into 1D
+
+def step(action):
+    global snake_alive, snake_dir, snake_size
+
+    directions = [(1, 0), (-1, 0), (0, -1), (0, 1)]
+    proposed_dir = directions[action]
+
+    if (proposed_dir[0] * -1, proposed_dir[1] * -1) != snake_dir:
+        snake_dir = proposed_dir
+
+    (dx, dy) = snake_dir
+    (x, y) = snake_body[0]
+    new_head = (x + dx * BLOCK_SIZE, y + dy * BLOCK_SIZE)
+
+    reward = 0
+    done = False
+
+    x, y = new_head
+    if x < 0 or x >= SCREEN_WIDTH or y < 0 or y >= SCREEN_HEIGHT:
+        snake_alive = False
+        reward = -1
+        done = True
+
+    # check if new head collisions with body before insertion
+    elif new_head in snake_body:
+        snake_alive = False
+        reward = -1
+        done = True
+    else:
+        snake_body.insert(0, new_head)
+
+        if new_head == food:
+            snake_size += 1
+            reward = 1
+            randomize_food()
+        else:
+            if len(snake_body) > snake_size:
+                snake_body.pop()
+            reward = 0
+
+    obs = get_observation()
+
+    return obs, reward, done
 
 # allows fps to be high while limiting game tickspeed
 GAME_TICK = pygame.USEREVENT
