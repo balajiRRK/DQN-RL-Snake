@@ -3,8 +3,11 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import random
+import pygame
 from collections import deque
 from game_environment import SnakeEnv
+import os
+import imageio
 
 # Hyperparameters
 GAMMA = 0.99
@@ -13,8 +16,11 @@ BATCH_SIZE = 64
 MEMORY_SIZE = 10000
 EPSILON_START = 1.0
 EPSILON_END = 0.1
-EPSILON_DECAY = 0.995
+EPSILON_DECAY = 0.9995
 TARGET_UPDATE_FREQ = 10
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
 # DQN Network
 class DQN(nn.Module):
@@ -47,12 +53,13 @@ class ReplayMemory:
     
 # Trainig loop
 def train():
+
     env = SnakeEnv()
     obs_size = env.get_observation().shape[0]
     n_actions = 4 # right, left, up down, 4 total options
 
-    policy_net = DQN(obs_size, n_actions)
-    target_net = DQN(obs_size, n_actions)
+    policy_net = DQN(obs_size, n_actions).to(device)
+    target_net = DQN(obs_size, n_actions).to(device)
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval()
 
@@ -61,18 +68,41 @@ def train():
 
     epsilon = EPSILON_START
 
-    for episode in range(1000):
+    RENDER_EVERY = 500 # render once every 20 episodes
+
+    best_score = -float('inf')
+    video_filename = 'best_snake_episode.gif'
+
+    for episode in range(2000):
         obs = env.reset()
         total_reward = 0
         done = False
 
+        render = (episode % RENDER_EVERY == 0)
+        frames = []
+
         while not done:
+
+            if render:
+                pygame.event.pump()
+                env.window.fill('black')
+                env.draw_snake()
+                env.draw_food()
+                pygame.display.flip()
+                env.clock.tick(15) # slower tick for animation visibility
+
+                frame = pygame.surfarray.array3d(env.window)
+                frame = frame.transpose([1, 0, 2]) # transpose (Width, Height, Channel) to (Height, Width, Channel)
+                frames.append(frame) 
+
+            # choose between random action and policy net action
             if random.random() < epsilon:
                 action = random.randint(0, n_actions - 1)
             else:
                 with torch.no_grad():
-                    action = policy_net(torch.tensor(obs, dtype=torch.float32).unsqueeze(0)).argmax().item()
+                    action = policy_net(torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)).argmax().item()
             
+            # Step through environment
             next_obs, reward, done = env.step(action)
             memory.push((obs, action, reward, next_obs, done))
             obs = next_obs
@@ -83,11 +113,11 @@ def train():
                 batch = memory.sample(BATCH_SIZE)
                 obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
 
-                obs_batch = torch.tensor(obs_batch, dtype=torch.float32)
-                action_batch = torch.tensor(action_batch, dtype=torch.int64).unsqueeze(1)
-                reward_batch = torch.tensor(reward_batch, dtype=torch.float32).unsqueeze(1)
-                next_obs_batch = torch.tensor(next_obs_batch, dtype=torch.float32)
-                done_batch = torch.tensor(done_batch, dtype=torch.float32).unsqueeze(1)
+                obs_batch = torch.from_numpy(np.array(obs_batch)).float().to(device)
+                action_batch = torch.tensor(action_batch, dtype=torch.int64).unsqueeze(1).to(device)
+                reward_batch = torch.tensor(reward_batch, dtype=torch.float32).unsqueeze(1).to(device)
+                next_obs_batch = torch.from_numpy(np.array(next_obs_batch)).float().to(device)
+                done_batch = torch.tensor(done_batch, dtype=torch.float32).unsqueeze(1).to(device)
 
                 q_values = policy_net(obs_batch).gather(1, action_batch)
                 with torch.no_grad():
@@ -95,17 +125,28 @@ def train():
                     target_q = reward_batch + GAMMA * max_next_q * (1 - done_batch)
 
                 loss = nn.MSELoss()(q_values, target_q)
-
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
             
+        score = env.snake_size - 3
+
         # Update target network
         if episode % TARGET_UPDATE_FREQ == 0:
             target_net.load_state_dict(policy_net.state_dict())
 
         epsilon = max(EPSILON_END, epsilon * EPSILON_DECAY)
-        print(f"Episode {episode}, Total reward: {total_reward}, Epsilon: {epsilon:.3f}")
+        print(f"Episode {episode}, Total reward: {total_reward}, Score: {score}, Epsilon: {epsilon:.3f}")
+
+        # NOTE: only saves best score episode AMONG ones recorded...
+        if render and score > best_score:
+            best_score = score
+            print(f"New best score {best_score} at episode {episode}. Saving video...")
+            imageio.mimsave(video_filename, frames, fps=15)
         
 if __name__ == "__main__":
-    train()
+    try:
+        train()
+    except KeyboardInterrupt:
+        print("\nTraining interrupted by user.")
+        pygame.quit()

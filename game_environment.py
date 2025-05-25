@@ -53,9 +53,12 @@ class SnakeEnv:
 
     def step(self, action):
 
+        reward = -0.01 # small penalty per step to incentivize faster food seeking
+
         directions = [(1, 0), (-1, 0), (0, -1), (0, 1)]
         proposed_dir = directions[action]
 
+        # prevent going opposite direction in one move
         if (proposed_dir[0] * -1, proposed_dir[1] * -1) != self.snake_dir:
             self.snake_dir = proposed_dir
 
@@ -146,46 +149,49 @@ class SnakeEnv:
 
 # ------- MANUAL Snake -------
 
-env = SnakeEnv()
-
-# allows fps to be high while limiting game tickspeed
-GAME_TICK = pygame.USEREVENT
-pygame.time.set_timer(GAME_TICK, 150) # 150ms default
-
-# Main Game Loop
-while True:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
-
-        if env.snake_alive:
-
-            # update dir not move snake on keypress since movement should be gated by game tickspeed while keypress handle should be handled constantly (at a 60fps rate)
-            # updates next_dir and not snake_dir since user can queue multiple movement commands during 1 game tick which shouldn't be allowed
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_RIGHT and env.snake_dir != (-1, 0):
-                    env.next_dir = (1, 0)
-                elif event.key == pygame.K_LEFT and env.snake_dir != (1, 0):
-                    env.next_dir = (-1, 0)
-                elif event.key == pygame.K_UP and env.snake_dir != (0, 1):
-                    env.next_dir = (0, -1)
-                elif event.key == pygame.K_DOWN and env.snake_dir != (0, -1):
-                    env.next_dir = (0, 1)
-
-            if event.type == GAME_TICK:
-                env.snake_dir = env.next_dir
-                env.window.fill('black')
-                env.draw_snake()
-                env.draw_food()
-                env.move_snake()
-        else:
-            env.window.blit(env.font.render("Dead", True, 'red'), (env.SCREEN_WIDTH // 2 - 30, env.SCREEN_HEIGHT // 2))
-            env.window.blit(env.font.render("Score: " + str(env.snake_size - 3), True, 'white'), (env.SCREEN_WIDTH // 2 - 30, env.SCREEN_HEIGHT // 2 + 30))
-
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_r:
-                    env.reset()
+# only execute if game_env file was executed, not if the file is imported
+if __name__ == "__main__": 
         
-    pygame.display.flip()
-    env.clock.tick(60)
+    env = SnakeEnv()
+
+    # allows fps to be high while limiting game tickspeed
+    GAME_TICK = pygame.USEREVENT
+    pygame.time.set_timer(GAME_TICK, 150) # 150ms default
+
+    # Main Game Loop
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+            if env.snake_alive:
+
+                # update dir not move snake on keypress since movement should be gated by game tickspeed while keypress handle should be handled constantly (at a 60fps rate)
+                # updates next_dir and not snake_dir since user can queue multiple movement commands during 1 game tick which shouldn't be allowed
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_RIGHT and env.snake_dir != (-1, 0):
+                        env.next_dir = (1, 0)
+                    elif event.key == pygame.K_LEFT and env.snake_dir != (1, 0):
+                        env.next_dir = (-1, 0)
+                    elif event.key == pygame.K_UP and env.snake_dir != (0, 1):
+                        env.next_dir = (0, -1)
+                    elif event.key == pygame.K_DOWN and env.snake_dir != (0, -1):
+                        env.next_dir = (0, 1)
+
+                if event.type == GAME_TICK:
+                    env.snake_dir = env.next_dir
+                    env.window.fill('black')
+                    env.draw_snake()
+                    env.draw_food()
+                    env.move_snake()
+            else:
+                env.window.blit(env.font.render("Dead", True, 'red'), (env.SCREEN_WIDTH // 2 - 30, env.SCREEN_HEIGHT // 2))
+                env.window.blit(env.font.render("Score: " + str(env.snake_size - 3), True, 'white'), (env.SCREEN_WIDTH // 2 - 30, env.SCREEN_HEIGHT // 2 + 30))
+
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_r:
+                        env.reset()
+            
+        pygame.display.flip()
+        env.clock.tick(60)
