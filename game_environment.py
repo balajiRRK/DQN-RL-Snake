@@ -2,6 +2,7 @@ import pygame
 import sys
 import random
 import numpy as np
+import math
 
 pygame.init()
 
@@ -43,7 +44,7 @@ class SnakeEnv:
 
         # index 1 is for food
         fx, fy = self.food
-        grid[fy // self.BLOCK_SIZE, fx // self.BLOCK_SIZE][1] = 1 
+        grid[fy // self.BLOCK_SIZE][fx // self.BLOCK_SIZE][1] = 1 
 
         # index 2 is for empty tile
         # 1 - food - snake, since either the tile is food or snake so if theres food then 1-1-0 = 0 so false
@@ -63,34 +64,42 @@ class SnakeEnv:
             self.snake_dir = proposed_dir
 
         (dx, dy) = self.snake_dir
-        (x, y) = self.snake_body[0]
-        new_head = (x + dx * self.BLOCK_SIZE, y + dy * self.BLOCK_SIZE)
+        old_x, old_y = self.snake_body[0]
+        new_head = (old_x + dx * self.BLOCK_SIZE, old_y + dy * self.BLOCK_SIZE)
 
-        reward = 0
         done = False
+        x, y = new_head
+
+        # incentivize moving snake closer to food
+        food_x, food_y = self.food
+        old_distance_to_food = math.sqrt((old_x - food_x) ** 2 + (old_y - food_y) ** 2)
+        new_distance_to_food = math.sqrt((x - food_x) ** 2 + (y - food_y) ** 2)
+        if old_distance_to_food > new_distance_to_food:
+            reward += 0.1
+        else:
+            reward -= 0.05
 
         x, y = new_head
         if x < 0 or x >= self.SCREEN_WIDTH or y < 0 or y >= self.SCREEN_HEIGHT:
             self.snake_alive = False
-            reward = -1
+            reward -= 10
             done = True
 
         # check if new head collisions with body before insertion
         elif new_head in self.snake_body:
             self.snake_alive = False
-            reward = -1
+            reward -= 10
             done = True
         else:
             self.snake_body.insert(0, new_head)
 
             if new_head == self.food:
                 self.snake_size += 1
-                reward = 1
+                reward += 10
                 self.randomize_food()
             else:
                 if len(self.snake_body) > self.snake_size:
                     self.snake_body.pop()
-                reward = 0
 
         obs = self.get_observation()
 

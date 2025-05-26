@@ -15,8 +15,8 @@ LR = 1e-3
 BATCH_SIZE = 64
 MEMORY_SIZE = 10000
 EPSILON_START = 1.0
-EPSILON_END = 0.1
-EPSILON_DECAY = 0.9995
+EPSILON_END = 0.05
+EPSILON_DECAY = 0.995
 TARGET_UPDATE_FREQ = 10
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -136,7 +136,7 @@ def train():
             target_net.load_state_dict(policy_net.state_dict())
 
         epsilon = max(EPSILON_END, epsilon * EPSILON_DECAY)
-        print(f"Episode {episode}, Total reward: {total_reward}, Score: {score}, Epsilon: {epsilon:.3f}")
+        print(f"Episode {episode}, Total reward: {round(total_reward, 2)}, Score: {score}, Epsilon: {epsilon:.3f}")
 
         # NOTE: only saves best score episode AMONG ones recorded...
         if render and score > best_score:
