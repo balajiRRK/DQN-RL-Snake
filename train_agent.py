@@ -119,14 +119,22 @@ def train():
                 next_obs_batch = torch.from_numpy(np.array(next_obs_batch)).float().to(device)
                 done_batch = torch.tensor(done_batch, dtype=torch.float32).unsqueeze(1).to(device)
 
+                #1 Forward pass
                 q_values = policy_net(obs_batch).gather(1, action_batch)
                 with torch.no_grad():
                     max_next_q = target_net(next_obs_batch).max(1)[0].unsqueeze(1)
                     target_q = reward_batch + GAMMA * max_next_q * (1 - done_batch)
 
+                #2 Calculate loss
                 loss = nn.MSELoss()(q_values, target_q)
+
+                #3 Optimizer zero grad zeros out gradients since gradients can accumulate into next iteration even though they have already been applied 
                 optimizer.zero_grad()
+
+                #4 Backprop
                 loss.backward()
+
+                #5 Gradient Descent
                 optimizer.step()
             
         score = env.snake_size - 3
