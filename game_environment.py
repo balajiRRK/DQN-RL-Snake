@@ -33,24 +33,69 @@ class SnakeEnv:
         return self.get_observation()
 
     def get_observation(self):
-        
-        # 20x20x3, where its represnted as [is_snake_here, is_food_here, is_empty_here] and each value must be mutually exclusive with only one '1' per 3D array
-        grid = np.zeros((self.SCREEN_WIDTH // self.BLOCK_SIZE, self.SCREEN_HEIGHT // self.BLOCK_SIZE, 3), dtype=np.float32)
+        head_x, head_y = self.snake_body[0]
 
-        # index 0 is for snake body
-        # 1 for true, 0 for false ^
-        for (x, y) in self.snake_body:
-            grid[y // self.BLOCK_SIZE][x // self.BLOCK_SIZE][0] = 1 
+        # Translate vector to direction string
+        dir_vec_to_str = {
+            (0, -1): 'UP',
+            (0, 1): 'DOWN',
+            (-1, 0): 'LEFT',
+            (1, 0): 'RIGHT'
+        }
+        direction_str = dir_vec_to_str[self.snake_dir]
 
-        # index 1 is for food
+        # One-hot encoding for direction: [UP, DOWN, LEFT, RIGHT]
+        direction = [
+            1 if direction_str == 'UP' else 0,
+            1 if direction_str == 'DOWN' else 0,
+            1 if direction_str == 'LEFT' else 0,
+            1 if direction_str == 'RIGHT' else 0,
+        ]
+
+        def is_danger(pos):
+            x, y = pos
+            if x < 0 or x >= self.SCREEN_WIDTH or y < 0 or y >= self.SCREEN_HEIGHT:
+                return True
+            return (x, y) in self.snake_body
+
+        def move_in_direction(direction):
+            if direction == 'UP':
+                return (head_x, head_y - self.BLOCK_SIZE)
+            elif direction == 'DOWN':
+                return (head_x, head_y + self.BLOCK_SIZE)
+            elif direction == 'LEFT':
+                return (head_x - self.BLOCK_SIZE, head_y)
+            elif direction == 'RIGHT':
+                return (head_x + self.BLOCK_SIZE, head_y)
+
+        # Mapping current direction to left/right/straight
+        left_dir = {'UP': 'LEFT', 'DOWN': 'RIGHT', 'LEFT': 'DOWN', 'RIGHT': 'UP'}
+        right_dir = {'UP': 'RIGHT', 'DOWN': 'LEFT', 'LEFT': 'UP', 'RIGHT': 'DOWN'}
+
+        dir_straight = direction_str
+        dir_left = left_dir[direction_str]
+        dir_right = right_dir[direction_str]
+
+        danger_straight = 1 if is_danger(move_in_direction(dir_straight)) else 0
+        danger_left = 1 if is_danger(move_in_direction(dir_left)) else 0
+        danger_right = 1 if is_danger(move_in_direction(dir_right)) else 0
+
         fx, fy = self.food
-        grid[fy // self.BLOCK_SIZE][fx // self.BLOCK_SIZE][1] = 1 
+        food_up = 1 if fy < head_y else 0
+        food_down = 1 if fy > head_y else 0
+        food_left = 1 if fx < head_x else 0
+        food_right = 1 if fx > head_x else 0
 
-        # index 2 is for empty tile
-        # 1 - food - snake, since either the tile is food or snake so if theres food then 1-1-0 = 0 so false
-        grid[:, :, 2] = 1 - grid[:, :, 1] - grid[:, :, 0]
+        observation = np.array(
+            direction +
+            [danger_straight, danger_left, danger_right] +
+            [food_up, food_down, food_left, food_right],
+            dtype=np.float32
+        )
+        
+        return observation
 
-        return grid.flatten() # converts multi-D array into 1D
+
 
     def step(self, action):
 
@@ -82,20 +127,20 @@ class SnakeEnv:
         x, y = new_head
         if x < 0 or x >= self.SCREEN_WIDTH or y < 0 or y >= self.SCREEN_HEIGHT:
             self.snake_alive = False
-            reward -= 10
+            reward -= 1
             done = True
 
         # check if new head collisions with body before insertion
         elif new_head in self.snake_body:
             self.snake_alive = False
-            reward -= 10
+            reward -= 1
             done = True
         else:
             self.snake_body.insert(0, new_head)
 
             if new_head == self.food:
                 self.snake_size += 1
-                reward += 10
+                reward += 1
                 self.randomize_food()
             else:
                 if len(self.snake_body) > self.snake_size:

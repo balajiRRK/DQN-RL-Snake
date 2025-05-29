@@ -68,7 +68,7 @@ def train():
 
     epsilon = EPSILON_START
 
-    RENDER_EVERY = 500 # render once every 20 episodes
+    RENDER_EVERY = 50 # render once every 20 episodes
 
     best_score = -float('inf')
     video_filename = 'best_snake_episode.gif'
