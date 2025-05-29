@@ -28,7 +28,7 @@ class SnakeEnv:
         self.snake_body = [(self.initial_x, self.initial_y), (self.initial_x-self.BLOCK_SIZE, self.initial_y), (self.initial_x-(self.BLOCK_SIZE * 2), self.initial_y)]
         self.snake_dir = (1, 0)
         self.next_dir = self.snake_dir
-        self.food = (100, 200)
+        self.randomize_food()
         
         return self.get_observation()
 
