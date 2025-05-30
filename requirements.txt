@@ -1,0 +1,6 @@
+numpy==2.1.2
+pygame==2.6.1
+torch==2.5.1+cu121
+matplotlib==3.9.2
+matplotlib-inline==0.1.7
+imageio==2.37.0

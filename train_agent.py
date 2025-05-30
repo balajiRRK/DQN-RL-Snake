@@ -1,3 +1,4 @@
+import sys
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -6,8 +7,9 @@ import random
 import pygame
 from collections import deque
 from game_environment import SnakeEnv
-import os
 import imageio
+import matplotlib.pyplot as plt
+import time
 
 # Hyperparameters
 GAMMA = 0.99
@@ -15,12 +17,15 @@ LR = 1e-3
 BATCH_SIZE = 64
 MEMORY_SIZE = 10000
 EPSILON_START = 1.0
-EPSILON_END = 0.05
-EPSILON_DECAY = 0.995
+EPSILON_END = 0.00
+EPSILON_DECAY = 0.998
 TARGET_UPDATE_FREQ = 10
+EPISODES = 300
+
+RENDER_EVERY = 50
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device: {device}")
+print(f"Using device: {device}\n")
 
 # DQN Network
 class DQN(nn.Module):
@@ -51,15 +56,23 @@ class ReplayMemory:
     def __len__(self):
         return len(self.buffer)
     
-# Trainig loop
-def train():
+# Training loop
+def train(model_path=None):
+
+    start_time = time.time()
 
     env = SnakeEnv()
     obs_size = env.get_observation().shape[0]
-    n_actions = 4 # right, left, up down, 4 total options
+    n_actions = 4 # right, left, up or down
 
     policy_net = DQN(obs_size, n_actions).to(device)
     target_net = DQN(obs_size, n_actions).to(device)
+
+    if model_path is not None:
+        print(f"Loading model from: {model_path}")
+        policy_net.load_state_dict(torch.load(model_path, map_location=device))
+        EPSILON_START = 0
+
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval()
 
@@ -68,18 +81,21 @@ def train():
 
     epsilon = EPSILON_START
 
-    RENDER_EVERY = 50 # render once every 20 episodes
-
+    best_rendered_score = -float('inf')
     best_score = -float('inf')
     video_filename = 'best_snake_episode.gif'
+    model_save_path = "best_dqn_model.pth"
+    all_scores = []
+    all_losses = []
 
-    for episode in range(2000):
+    for episode in range(EPISODES):
         obs = env.reset()
         total_reward = 0
         done = False
 
         render = (episode % RENDER_EVERY == 0)
         frames = []
+        episode_losses = []
 
         while not done:
 
@@ -136,8 +152,16 @@ def train():
 
                 #5 Gradient Descent
                 optimizer.step()
+
+                # visualization
+                episode_losses.append(loss.item())
             
-        score = env.snake_size - 3
+        score = env.snake_size - env.STARTING_SIZE
+
+        # visualization
+        avg_loss = np.mean(episode_losses) if episode_losses else 0
+        all_losses.append(avg_loss)
+        all_scores.append(score)
 
         # Update target network
         if episode % TARGET_UPDATE_FREQ == 0:
@@ -146,15 +170,50 @@ def train():
         epsilon = max(EPSILON_END, epsilon * EPSILON_DECAY)
         print(f"Episode {episode}, Total reward: {round(total_reward, 2)}, Score: {score}, Epsilon: {epsilon:.3f}")
 
-        # NOTE: only saves best score episode AMONG ones recorded...
-        if render and score > best_score:
-            best_score = score
-            print(f"New best score {best_score} at episode {episode}. Saving video...")
+        # NOTE: only saves best score episode AMONG the few ones recorded...
+        if render and score > best_rendered_score:
+            best_rendered_score = score
+            print(f"New best score {best_rendered_score} at episode {episode}. Saving video...")
             imageio.mimsave(video_filename, frames, fps=15)
+        elif score > best_score: # best total score among all episodes
+            best_score = score
+            print(f"New best model score: {best_score}. Saving model weights...")
+            torch.save(policy_net.state_dict(), model_save_path)
+
+    
+    # After training complete:
+    window = 50
+    episodes = np.arange(len(all_scores))
+    rolling_scores = np.convolve(all_scores, np.ones(window)/window, mode='valid')
+    rolling_losses = np.convolve(all_losses, np.ones(window)/window, mode='valid')
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
+
+    ax1.plot(episodes[len(episodes) - len(rolling_scores):], rolling_scores, label=f"Avg Score ({window}-episode window)")
+    ax1.set_title("Smoothed Score per Episode")
+    ax1.set_xlabel("Episode")
+    ax1.set_ylabel("Score")
+    ax1.grid(True)
+
+    ax2.plot(episodes[len(episodes) - len(rolling_losses):], rolling_losses, label=f"Avg Loss ({window}-episode window)", color="orange")
+    ax2.set_title("Smoothed Loss per Episode")
+    ax2.set_xlabel("Episode")
+    ax2.set_ylabel("Loss")
+    ax2.grid(True)
+
+    plt.tight_layout()
+    plt.savefig("training_metrics.png")
+
+    elapsed = time.time() - start_time
+    minutes, seconds = divmod(int(elapsed), 60)
+    print(f"\nTotal training time: {minutes} minutes and {seconds} seconds")
+
+    print(f"\nBest score from a single episode in training: {best_score}")
         
 if __name__ == "__main__":
     try:
-        train()
+        model_path = sys.argv[1] if len(sys.argv) > 1 else None # assign model path if given or set to None if not
+        train(model_path)
     except KeyboardInterrupt:
         print("\nTraining interrupted by user.")
         pygame.quit()

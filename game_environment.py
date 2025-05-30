@@ -8,12 +8,11 @@ pygame.init()
 
 # Game Environment Interface for RL
 class SnakeEnv:
-    def __init__(self, screen_width=400, screen_height=400, block_size=20):
+    def __init__(self, screen_width=400, screen_height=400, block_size=20, starting_size=3):
         self.SCREEN_WIDTH = screen_width
         self.SCREEN_HEIGHT = screen_height
         self.BLOCK_SIZE = block_size
-        self.grid_width = self.SCREEN_WIDTH // self.BLOCK_SIZE
-        self.grid_height = self.SCREEN_HEIGHT // self.BLOCK_SIZE
+        self.STARTING_SIZE = starting_size
 
         self.window = pygame.display.set_mode((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
         self.font = pygame.font.SysFont(None, 30)
@@ -22,7 +21,7 @@ class SnakeEnv:
 
     def reset(self):
         self.snake_alive = True
-        self.snake_size = 3
+        self.snake_size = self.STARTING_SIZE
         self.initial_x = 100
         self.initial_y = 100
         self.snake_body = [(self.initial_x, self.initial_y), (self.initial_x-self.BLOCK_SIZE, self.initial_y), (self.initial_x-(self.BLOCK_SIZE * 2), self.initial_y)]
@@ -94,8 +93,6 @@ class SnakeEnv:
         )
         
         return observation
-
-
 
     def step(self, action):
 
