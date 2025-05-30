@@ -20,7 +20,7 @@ py train_agent.py
 
 To continue training a saved model:
 ```
-py train_agent.py {INSERT_NAME.pth}
+py train_agent.py <model_weights_filename>.pth
 ```
 
 Additionally, you can also modify the hyperparameters or constants in `train_agent.py` file such as RENDER_EVERY to either speed up training by reducing the frequency of rendering being done or you can slow down training but improve visualization potentially for debugging purposes by increasing the frequency of rendering. 
