@@ -18,11 +18,11 @@ BATCH_SIZE = 64
 MEMORY_SIZE = 10000
 EPSILON_START = 1.0
 EPSILON_END = 0.00
-EPSILON_DECAY = 0.998
+EPSILON_DECAY = 0.9992
 TARGET_UPDATE_FREQ = 10
-EPISODES = 300
+EPISODES = 5000
 
-RENDER_EVERY = 50
+RENDER_EVERY = 1000
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}\n")
@@ -71,7 +71,6 @@ def train(model_path=None):
     if model_path is not None:
         print(f"Loading model from: {model_path}")
         policy_net.load_state_dict(torch.load(model_path, map_location=device))
-        EPSILON_START = 0
 
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval()
@@ -79,11 +78,11 @@ def train(model_path=None):
     optimizer = optim.Adam(policy_net.parameters(), lr=LR)
     memory = ReplayMemory(MEMORY_SIZE)
 
-    epsilon = EPSILON_START
+    epsilon = 0 if model_path is not None else EPSILON_START # can replace this line with epsilon = EPSILON_START to continue training a pre-trained model rather than testing with eps = 0
 
     best_rendered_score = -float('inf')
     best_score = -float('inf')
-    video_filename = 'best_snake_episode.gif'
+    video_filename = 'best_snake_episode.mp4'
     model_save_path = "best_dqn_model.pth"
     all_scores = []
     all_losses = []
@@ -104,8 +103,9 @@ def train(model_path=None):
                 env.window.fill('black')
                 env.draw_snake()
                 env.draw_food()
+                env.display_score()
                 pygame.display.flip()
-                env.clock.tick(15) # slower tick for animation visibility
+                env.clock.tick(30)
 
                 frame = pygame.surfarray.array3d(env.window)
                 frame = frame.transpose([1, 0, 2]) # transpose (Width, Height, Channel) to (Height, Width, Channel)
@@ -174,8 +174,9 @@ def train(model_path=None):
         if render and score > best_rendered_score:
             best_rendered_score = score
             print(f"New best score {best_rendered_score} at episode {episode}. Saving video...")
-            imageio.mimsave(video_filename, frames, fps=15)
-        elif score > best_score: # best total score among all episodes
+            imageio.mimwrite(video_filename, frames, fps=15, codec='libx264', quality=8)
+        
+        if score > best_score: # best total score among all episodes
             best_score = score
             print(f"New best model score: {best_score}. Saving model weights...")
             torch.save(policy_net.state_dict(), model_save_path)

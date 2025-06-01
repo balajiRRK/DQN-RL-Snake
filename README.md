@@ -2,7 +2,7 @@
 
 This project implements a Deep Q-Learning (DQN) agent to learn and play the classic Snake game. Built with PyTorch and Pygame, the agent learns through interaction with the Snake game environment through repetitive play where it fine-tunes its policy to achieve better results. The training process includes model checkpointing, gameplay recording, epsilon-greedy exploration, and performance visualization with rolling averages of score and loss.
 
-There is an included version of a trained agent with model weights given as a .pth file which was trained using a GTX 1070 for ~30 minutes for 3000 episodes to achieve an average score of ~28 near the 3000 episode mark and a peak of 65.
+There is an included version of a trained agent with model weights given as a .pth file which was trained using a GTX 1070 for ~1 hour for 6000 episodes to achieve an average score of ~25 near the 3000 episode mark and a peak of 73.
 
 ## Instructions to run program
 

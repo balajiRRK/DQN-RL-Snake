@@ -15,7 +15,7 @@ class SnakeEnv:
         self.STARTING_SIZE = starting_size
 
         self.window = pygame.display.set_mode((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
-        self.font = pygame.font.SysFont(None, 30)
+        self.font = pygame.font.SysFont('Arial', 15, bold=False)
         self.clock = pygame.time.Clock()
         self.reset()
 
@@ -197,6 +197,11 @@ class SnakeEnv:
         if len(self.snake_body) > self.snake_size:
             self.snake_body.pop()
 
+    def display_score(self):
+        self.window.blit(self.font.render("Score: " + str(self.snake_size - self.STARTING_SIZE), True, 'white'), (0, 0))
+
+
+
 
 # ------- MANUAL Snake -------
 
@@ -236,9 +241,9 @@ if __name__ == "__main__":
                     env.draw_snake()
                     env.draw_food()
                     env.move_snake()
+                    env.display_score()
             else:
                 env.window.blit(env.font.render("Dead", True, 'red'), (env.SCREEN_WIDTH // 2 - 30, env.SCREEN_HEIGHT // 2))
-                env.window.blit(env.font.render("Score: " + str(env.snake_size - 3), True, 'white'), (env.SCREEN_WIDTH // 2 - 30, env.SCREEN_HEIGHT // 2 + 30))
 
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_r:
