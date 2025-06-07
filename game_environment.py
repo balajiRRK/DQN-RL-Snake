@@ -2,17 +2,21 @@ import pygame
 import sys
 import random
 import numpy as np
-import math
 
 pygame.init()
 
 # Game Environment Interface for RL
 class SnakeEnv:
-    def __init__(self, screen_width=400, screen_height=400, block_size=20, starting_size=3):
+    def __init__(self, screen_width=400, screen_height=400, block_size=20, starting_size=3, curriculum_val=0.5):
         self.SCREEN_WIDTH = screen_width
         self.SCREEN_HEIGHT = screen_height
         self.BLOCK_SIZE = block_size
         self.STARTING_SIZE = starting_size
+        self.C = curriculum_val
+        self.food_positions = set()
+
+        self.grid_width = self.SCREEN_WIDTH // self.BLOCK_SIZE
+        self.grid_height = self.SCREEN_HEIGHT // self.BLOCK_SIZE
 
         self.window = pygame.display.set_mode((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
         self.font = pygame.font.SysFont('Arial', 15, bold=False)
@@ -27,72 +31,52 @@ class SnakeEnv:
         self.snake_body = [(self.initial_x, self.initial_y), (self.initial_x-self.BLOCK_SIZE, self.initial_y), (self.initial_x-(self.BLOCK_SIZE * 2), self.initial_y)]
         self.snake_dir = (1, 0)
         self.next_dir = self.snake_dir
-        self.randomize_food()
+        self.food_positions = set()
+        self.populate_food()
         
         return self.get_observation()
 
+    # height * width of uint8 where 0 = empty, 1 = snake_body, 2 = snake_head, 3 = food, then cast to float32 and normalize to 0-1 range by dividing by 2
     def get_observation(self):
+        grid_h, grid_w = self.grid_height, self.grid_width
+
+        # Create 4 channels: body, head, food, direction
+        body_channel = np.zeros((grid_h, grid_w), dtype=np.float32)
+        head_channel = np.zeros((grid_h, grid_w), dtype=np.float32)
+        food_channel = np.zeros((grid_h, grid_w), dtype=np.float32)
+        direction_channel = np.zeros((grid_h, grid_w), dtype=np.float32)
+
+        # Body (excluding head)
+        for (x, y) in self.snake_body[1:]:
+            gx = x // self.BLOCK_SIZE
+            gy = y // self.BLOCK_SIZE
+            body_channel[gy, gx] = 1.0
+
+        # Head
         head_x, head_y = self.snake_body[0]
+        gx = head_x // self.BLOCK_SIZE
+        gy = head_y // self.BLOCK_SIZE
+        head_channel[gy, gx] = 1.0
 
-        # Translate vector to direction string
-        dir_vec_to_str = {
-            (0, -1): 'UP',
-            (0, 1): 'DOWN',
-            (-1, 0): 'LEFT',
-            (1, 0): 'RIGHT'
-        }
-        direction_str = dir_vec_to_str[self.snake_dir]
+        # Food
+        for fx, fy in self.food_positions:
+            gx = fx // self.BLOCK_SIZE
+            gy = fy // self.BLOCK_SIZE
+            food_channel[gy, gx] = 1.0
 
-        # One-hot encoding for direction: [UP, DOWN, LEFT, RIGHT]
-        direction = [
-            1 if direction_str == 'UP' else 0,
-            1 if direction_str == 'DOWN' else 0,
-            1 if direction_str == 'LEFT' else 0,
-            1 if direction_str == 'RIGHT' else 0,
-        ]
+        # Direction (encoded only at head position)
+        if self.snake_dir == "UP":
+            direction_channel[gy, gx] = 0.25
+        elif self.snake_dir == "DOWN":
+            direction_channel[gy, gx] = 0.5
+        elif self.snake_dir == "LEFT":
+            direction_channel[gy, gx] = 0.75
+        elif self.snake_dir == "RIGHT":
+            direction_channel[gy, gx] = 1.0
 
-        def is_danger(pos):
-            x, y = pos
-            if x < 0 or x >= self.SCREEN_WIDTH or y < 0 or y >= self.SCREEN_HEIGHT:
-                return True
-            return (x, y) in self.snake_body
-
-        def move_in_direction(direction):
-            if direction == 'UP':
-                return (head_x, head_y - self.BLOCK_SIZE)
-            elif direction == 'DOWN':
-                return (head_x, head_y + self.BLOCK_SIZE)
-            elif direction == 'LEFT':
-                return (head_x - self.BLOCK_SIZE, head_y)
-            elif direction == 'RIGHT':
-                return (head_x + self.BLOCK_SIZE, head_y)
-
-        # Mapping current direction to left/right/straight
-        left_dir = {'UP': 'LEFT', 'DOWN': 'RIGHT', 'LEFT': 'DOWN', 'RIGHT': 'UP'}
-        right_dir = {'UP': 'RIGHT', 'DOWN': 'LEFT', 'LEFT': 'UP', 'RIGHT': 'DOWN'}
-
-        dir_straight = direction_str
-        dir_left = left_dir[direction_str]
-        dir_right = right_dir[direction_str]
-
-        danger_straight = 1 if is_danger(move_in_direction(dir_straight)) else 0
-        danger_left = 1 if is_danger(move_in_direction(dir_left)) else 0
-        danger_right = 1 if is_danger(move_in_direction(dir_right)) else 0
-
-        fx, fy = self.food
-        food_up = 1 if fy < head_y else 0
-        food_down = 1 if fy > head_y else 0
-        food_left = 1 if fx < head_x else 0
-        food_right = 1 if fx > head_x else 0
-
-        observation = np.array(
-            direction +
-            [danger_straight, danger_left, danger_right] +
-            [food_up, food_down, food_left, food_right],
-            dtype=np.float32
-        )
-        
-        return observation
+        # Stack channels into a single observation tensor
+        obs = np.stack([body_channel, head_channel, food_channel, direction_channel], axis=0)  # shape: (4, H, W)
+        return obs
 
     def step(self, action):
 
@@ -113,13 +97,13 @@ class SnakeEnv:
         x, y = new_head
 
         # incentivize moving snake closer to food
-        food_x, food_y = self.food
-        old_distance_to_food = math.sqrt((old_x - food_x) ** 2 + (old_y - food_y) ** 2)
-        new_distance_to_food = math.sqrt((x - food_x) ** 2 + (y - food_y) ** 2)
-        if old_distance_to_food > new_distance_to_food:
-            reward += 0.1
-        else:
-            reward -= 0.05
+        # food_x, food_y = self.food
+        # old_distance_to_food = abs(old_x - food_x) + abs(old_y - food_y)
+        # new_distance_to_food = abs(x - food_x) + abs(y - food_y)
+        # if old_distance_to_food > new_distance_to_food:
+        #     reward += 0.1
+        # else:
+        #     reward -= 0.1
 
         x, y = new_head
         if x < 0 or x >= self.SCREEN_WIDTH or y < 0 or y >= self.SCREEN_HEIGHT:
@@ -135,10 +119,10 @@ class SnakeEnv:
         else:
             self.snake_body.insert(0, new_head)
 
-            if new_head == self.food:
+            if new_head in self.food_positions:
                 self.snake_size += 1
                 reward += 1
-                self.randomize_food()
+                self.food_positions.remove(new_head)
             else:
                 if len(self.snake_body) > self.snake_size:
                     self.snake_body.pop()
@@ -147,11 +131,29 @@ class SnakeEnv:
 
         return obs, reward, done
     
-    def randomize_food(self):
-        self.food = (random.randrange(0, self.SCREEN_WIDTH, self.BLOCK_SIZE), random.randrange(0, self.SCREEN_HEIGHT, self.BLOCK_SIZE))
+    def populate_food(self):
+        total_cells = self.grid_width * self.grid_height
+        num_food = int(total_cells * self.C)
 
-        while self.food in self.snake_body:
-            self.food = (random.randrange(0, self.SCREEN_WIDTH, self.BLOCK_SIZE), random.randrange(0, self.SCREEN_HEIGHT, self.BLOCK_SIZE))
+        # Convert snake body to grid positions
+        snake_grid = set((x // self.BLOCK_SIZE, y // self.BLOCK_SIZE) for x, y in self.snake_body)
+
+        # All possible grid coordinates
+        all_cells = [(x, y) for x in range(self.grid_width) for y in range(self.grid_height)]
+
+        # Remove snake body tiles
+        empty_cells = [cell for cell in all_cells if cell not in snake_grid]
+
+        # Randomly pick food positions from empty tiles
+        chosen_food_cells = random.sample(empty_cells, min(num_food, len(empty_cells)))
+
+        self.food_positions = set((x * self.BLOCK_SIZE, y * self.BLOCK_SIZE) for (x, y) in chosen_food_cells)
+
+    # def randomize_food(self):
+    #     self.food = (random.randrange(0, self.SCREEN_WIDTH, self.BLOCK_SIZE), random.randrange(0, self.SCREEN_HEIGHT, self.BLOCK_SIZE))
+
+    #     while self.food in self.snake_body:
+    #         self.food = (random.randrange(0, self.SCREEN_WIDTH, self.BLOCK_SIZE), random.randrange(0, self.SCREEN_HEIGHT, self.BLOCK_SIZE))
 
     def draw_snake(self):
         for i, segment in enumerate(self.snake_body):
@@ -166,11 +168,12 @@ class SnakeEnv:
 
             pygame.draw.rect(self.window, color, rect)
 
-    def draw_food(self):    
-        x, y = self.food
-        rect = pygame.Rect(x, y, self.BLOCK_SIZE, self.BLOCK_SIZE)
+    def draw_food(self):
+        for (x, y) in self.food_positions:
+            rect = pygame.Rect(x, y, self.BLOCK_SIZE, self.BLOCK_SIZE)
+            
+            pygame.draw.rect(self.window, (255, 0, 0), rect)
 
-        pygame.draw.rect(self.window, (255, 0, 0), rect)
 
     def move_snake(self):
 

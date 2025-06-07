@@ -17,37 +17,54 @@ LR = 1e-3
 BATCH_SIZE = 64
 MEMORY_SIZE = 10000
 EPSILON_START = 1.0
-EPSILON_END = 0.00
-EPSILON_DECAY = 0.9992
+EPSILON_END = 0.05
+EPSILON_DECAY = 0.999
 TARGET_UPDATE_FREQ = 10
-EPISODES = 5000
+EPISODES = 3000
 
-RENDER_EVERY = 1000
+RENDER_EVERY = 50
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}\n")
 
-# DQN Network
+# CNN
 class DQN(nn.Module):
-    def __init__(self, input_dim, output_dim):
+    def __init__(self, grid_h, grid_w, n_actions):
         super().__init__()
+        
+        # Our observation is now 4 channels (body, head, food, direction).
+        # So Conv2d must expect in_channels=4.
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_channels=4, out_channels=32, kernel_size=3, padding=1),  # -> (32, grid_h, grid_w)
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),                            # -> (64, grid_h, grid_w)
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1),                            # -> (64, grid_h, grid_w)
+            nn.ReLU()
+        )
+        
+        # AFTER these three conv layers (with padding=1), the spatial dimensions remain (grid_h × grid_w).
+        # Therefore the flattened size is:
+        conv_output_size = 64 * grid_h * grid_w
+
         self.fc = nn.Sequential(
-            nn.Linear(input_dim, 256),
+            nn.Flatten(),                      # Flattens (batch, 64, grid_h, grid_w) -> (batch, 64*grid_h*grid_w)
+            nn.Linear(conv_output_size, 512),  # Now uses the *actual* conv_output_size, not a hard-coded 25600
             nn.ReLU(),
-            nn.Linear(256, 128),
-            nn.ReLU(),
-            nn.Linear(128, output_dim)
+            nn.Linear(512, n_actions)          # One Q-value per action
         )
 
     def forward(self, x):
-        return self.fc(x)
-    
-# Replay buffer
+        # Expect x of shape (batch, 4, grid_h, grid_w)
+        x = self.conv(x)   # -> (batch, 64, grid_h, grid_w)
+        return self.fc(x)  # -> (batch, n_actions)
+
 class ReplayMemory:
     def __init__(self, capacity):
         self.buffer = deque(maxlen=capacity)
 
     def push(self, transition):
+        # transition = (state, action, reward, next_state, done)
         self.buffer.append(transition)
 
     def sample(self, batch_size):
@@ -56,17 +73,16 @@ class ReplayMemory:
     def __len__(self):
         return len(self.buffer)
     
-# Training loop
 def train(model_path=None):
 
     start_time = time.time()
 
     env = SnakeEnv()
-    obs_size = env.get_observation().shape[0]
-    n_actions = 4 # right, left, up or down
+    grid_h, grid_w = env.grid_height, env.grid_width
+    n_actions = 4  # right, left, up, down
 
-    policy_net = DQN(obs_size, n_actions).to(device)
-    target_net = DQN(obs_size, n_actions).to(device)
+    policy_net = DQN(grid_h, grid_w, n_actions).to(device)
+    target_net = DQN(grid_h, grid_w, n_actions).to(device)
 
     if model_path is not None:
         print(f"Loading model from: {model_path}")
@@ -84,12 +100,14 @@ def train(model_path=None):
     best_score = -float('inf')
     video_filename = 'best_snake_episode.mp4'
     model_save_path = "best_dqn_model.pth"
+
     all_scores = []
     all_losses = []
 
     for episode in range(EPISODES):
         obs = env.reset()
         total_reward = 0
+        steps_since_last_fruit = 0
         done = False
 
         render = (episode % RENDER_EVERY == 0)
@@ -116,7 +134,8 @@ def train(model_path=None):
                 action = random.randint(0, n_actions - 1)
             else:
                 with torch.no_grad():
-                    action = policy_net(torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)).argmax().item()
+                    obs_tensor = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
+                    action = policy_net(obs_tensor).argmax().item()
             
             # Step through environment
             next_obs, reward, done = env.step(action)
@@ -129,11 +148,12 @@ def train(model_path=None):
                 batch = memory.sample(BATCH_SIZE)
                 obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
 
-                obs_batch = torch.from_numpy(np.array(obs_batch)).float().to(device)
-                action_batch = torch.tensor(action_batch, dtype=torch.int64).unsqueeze(1).to(device)
-                reward_batch = torch.tensor(reward_batch, dtype=torch.float32).unsqueeze(1).to(device)
-                next_obs_batch = torch.from_numpy(np.array(next_obs_batch)).float().to(device)
-                done_batch = torch.tensor(done_batch, dtype=torch.float32).unsqueeze(1).to(device)
+                # Convert to tensors:
+                obs_batch = torch.tensor(np.stack(obs_batch), dtype=torch.float32, device=device)
+                action_batch = torch.tensor(action_batch, dtype=torch.int64, device=device).unsqueeze(1)
+                reward_batch = torch.tensor(reward_batch, dtype=torch.float32, device=device).unsqueeze(1)
+                next_obs_batch = torch.tensor(np.stack(next_obs_batch), dtype=torch.float32, device=device)
+                done_batch = torch.tensor(done_batch, dtype=torch.float32, device=device).unsqueeze(1)
 
                 #1 Forward pass
                 q_values = policy_net(obs_batch).gather(1, action_batch)
@@ -155,6 +175,15 @@ def train(model_path=None):
 
                 # visualization
                 episode_losses.append(loss.item())
+
+                if reward > 0:
+                    steps_since_last_fruit = 0
+                else:
+                    steps_since_last_fruit += 1
+
+                if steps_since_last_fruit > 100:
+                    print(f"Episode {episode} ended due to performing {steps_since_last_fruit} without touching food.")
+                    done = True
             
         score = env.snake_size - env.STARTING_SIZE
 
