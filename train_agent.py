@@ -222,7 +222,7 @@ def train(model_path=None):
         if episode % LOG_INTERVAL == 0:
             recent_scores = all_scores[-LOG_INTERVAL:] if len(all_scores) >= LOG_INTERVAL else all_scores
             avg_recent_score = np.mean(recent_scores)
-            print(f"Episode {episode}, Recent {LOG_INTERVAL}-episode average: {avg_recent_score:.2f}, Current epsilon: {epsilon:.3f}")
+            print(f"Average score from episodes {episode - LOG_INTERVAL}-{episode}: {avg_recent_score:.2f}")
 
         # NOTE: only saves best score episode AMONG the few ones recorded...
         if render and score > best_rendered_score:
