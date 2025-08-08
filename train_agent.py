@@ -20,7 +20,7 @@ EPSILON_START = 1.0
 EPSILON_END = 0.05
 EPSILON_DECAY = 0.995
 TARGET_UPDATE_FREQ = 100
-EPISODES = 1000
+EPISODES = 100
         
 LOG_INTERVAL = 100
 RENDER_EVERY = 50
@@ -219,7 +219,7 @@ def train(model_path=None):
 
         print(f"Episode {episode}, Total reward: {round(total_reward, 2)}, Score: {score}, Epsilon: {epsilon:.3f}")
 
-        if episode % LOG_INTERVAL == 0:
+        if episode % LOG_INTERVAL == 0 and episode != 0:
             recent_scores = all_scores[-LOG_INTERVAL:] if len(all_scores) >= LOG_INTERVAL else all_scores
             avg_recent_score = np.mean(recent_scores)
             print(f"Average score from episodes {episode - LOG_INTERVAL}-{episode}: {avg_recent_score:.2f}")
@@ -256,11 +256,15 @@ def train(model_path=None):
     ax2.set_ylabel("Loss")
     ax2.grid(True)
 
+    elapsed = time.time() - start_time
+    minutes, seconds = divmod(int(elapsed), 60)
+    
+    training_info = f"Training Time: {minutes}m {seconds}s | Episodes: {EPISODES} | Best Score: {best_score}"
+    fig.suptitle(f"Snake AI Training Results - {training_info}", fontsize=12, y=0.98)   
+
     plt.tight_layout()
     plt.savefig("training_metrics.png")
 
-    elapsed = time.time() - start_time
-    minutes, seconds = divmod(int(elapsed), 60)
     print(f"\nTotal training time: {minutes} minutes and {seconds} seconds")
 
     print(f"\nBest score from a single episode in training: {best_score}")
