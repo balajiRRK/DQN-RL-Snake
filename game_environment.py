@@ -7,13 +7,11 @@ pygame.init()
 
 # Game Environment Interface for RL
 class SnakeEnv:
-    def __init__(self, screen_width=400, screen_height=400, block_size=20, starting_size=3, curriculum_val=0.5):
+    def __init__(self, screen_width=400, screen_height=400, block_size=20, starting_size=3):
         self.SCREEN_WIDTH = screen_width
         self.SCREEN_HEIGHT = screen_height
         self.BLOCK_SIZE = block_size
         self.STARTING_SIZE = starting_size
-        self.C = curriculum_val
-        self.food_positions = set()
 
         self.grid_width = self.SCREEN_WIDTH // self.BLOCK_SIZE
         self.grid_height = self.SCREEN_HEIGHT // self.BLOCK_SIZE
@@ -31,12 +29,12 @@ class SnakeEnv:
         self.snake_body = [(self.initial_x, self.initial_y), (self.initial_x-self.BLOCK_SIZE, self.initial_y), (self.initial_x-(self.BLOCK_SIZE * 2), self.initial_y)]
         self.snake_dir = (1, 0)
         self.next_dir = self.snake_dir
-        self.food_positions = set()
-        self.populate_food()
-        
+        self.randomize_food()
+
         return self.get_observation()
 
-    # height * width of uint8 where 0 = empty, 1 = snake_body, 2 = snake_head, 3 = food, then cast to float32 and normalize to 0-1 range by dividing by 2
+    # creating obs by using 4 separate channels (2D arrays) for each info type instead of one 2D array with different numbers corresponding to different
+    # info types since that would require the NN to learn the differences on its own
     def get_observation(self):
         grid_h, grid_w = self.grid_height, self.grid_width
 
@@ -59,19 +57,19 @@ class SnakeEnv:
         head_channel[gy, gx] = 1.0
 
         # Food
-        for fx, fy in self.food_positions:
-            gx = fx // self.BLOCK_SIZE
-            gy = fy // self.BLOCK_SIZE
-            food_channel[gy, gx] = 1.0
+        fx, fy = self.food
+        gx = fx // self.BLOCK_SIZE
+        gy = fy // self.BLOCK_SIZE
+        food_channel[gy, gx] = 1.0
 
         # Direction (encoded only at head position)
-        if self.snake_dir == "UP":
+        if self.snake_dir == (0, -1): # up
             direction_channel[gy, gx] = 0.25
-        elif self.snake_dir == "DOWN":
+        elif self.snake_dir == (0, 1): # down
             direction_channel[gy, gx] = 0.5
-        elif self.snake_dir == "LEFT":
+        elif self.snake_dir == (-1, 0): # left
             direction_channel[gy, gx] = 0.75
-        elif self.snake_dir == "RIGHT":
+        elif self.snake_dir == (1, 0): # right
             direction_channel[gy, gx] = 1.0
 
         # Stack channels into a single observation tensor
@@ -97,32 +95,32 @@ class SnakeEnv:
         x, y = new_head
 
         # incentivize moving snake closer to food
-        # food_x, food_y = self.food
-        # old_distance_to_food = abs(old_x - food_x) + abs(old_y - food_y)
-        # new_distance_to_food = abs(x - food_x) + abs(y - food_y)
-        # if old_distance_to_food > new_distance_to_food:
-        #     reward += 0.1
-        # else:
-        #     reward -= 0.1
+        food_x, food_y = self.food
+        old_distance_to_food = abs(old_x - food_x) + abs(old_y - food_y)
+        new_distance_to_food = abs(x - food_x) + abs(y - food_y)
+        if old_distance_to_food > new_distance_to_food:
+            reward += 0.1
+        else:
+            reward -= 0.1
 
         x, y = new_head
         if x < 0 or x >= self.SCREEN_WIDTH or y < 0 or y >= self.SCREEN_HEIGHT:
             self.snake_alive = False
-            reward -= 1
+            reward -= 5
             done = True
 
         # check if new head collisions with body before insertion
         elif new_head in self.snake_body:
             self.snake_alive = False
-            reward -= 1
+            reward -= 5
             done = True
         else:
             self.snake_body.insert(0, new_head)
 
-            if new_head in self.food_positions:
+            if new_head == self.food:
                 self.snake_size += 1
-                reward += 1
-                self.food_positions.remove(new_head)
+                reward += 15
+                self.randomize_food()
             else:
                 if len(self.snake_body) > self.snake_size:
                     self.snake_body.pop()
@@ -130,36 +128,18 @@ class SnakeEnv:
         obs = self.get_observation()
 
         return obs, reward, done
-    
-    def populate_food(self):
-        total_cells = self.grid_width * self.grid_height
-        num_food = int(total_cells * self.C)
 
-        # Convert snake body to grid positions
-        snake_grid = set((x // self.BLOCK_SIZE, y // self.BLOCK_SIZE) for x, y in self.snake_body)
+    def randomize_food(self):
+        self.food = (random.randrange(0, self.SCREEN_WIDTH, self.BLOCK_SIZE), random.randrange(0, self.SCREEN_HEIGHT, self.BLOCK_SIZE))
 
-        # All possible grid coordinates
-        all_cells = [(x, y) for x in range(self.grid_width) for y in range(self.grid_height)]
-
-        # Remove snake body tiles
-        empty_cells = [cell for cell in all_cells if cell not in snake_grid]
-
-        # Randomly pick food positions from empty tiles
-        chosen_food_cells = random.sample(empty_cells, min(num_food, len(empty_cells)))
-
-        self.food_positions = set((x * self.BLOCK_SIZE, y * self.BLOCK_SIZE) for (x, y) in chosen_food_cells)
-
-    # def randomize_food(self):
-    #     self.food = (random.randrange(0, self.SCREEN_WIDTH, self.BLOCK_SIZE), random.randrange(0, self.SCREEN_HEIGHT, self.BLOCK_SIZE))
-
-    #     while self.food in self.snake_body:
-    #         self.food = (random.randrange(0, self.SCREEN_WIDTH, self.BLOCK_SIZE), random.randrange(0, self.SCREEN_HEIGHT, self.BLOCK_SIZE))
+        while self.food in self.snake_body:
+            self.food = (random.randrange(0, self.SCREEN_WIDTH, self.BLOCK_SIZE), random.randrange(0, self.SCREEN_HEIGHT, self.BLOCK_SIZE))
 
     def draw_snake(self):
         for i, segment in enumerate(self.snake_body):
 
             max_green = 255
-            min_green = 90 # not fully dark
+            min_green = 90 # not fully dark so doesnt blend in with black background
             green_fade = int(max_green - (i / len(self.snake_body)) * (max_green - min_green))
             color = (0, green_fade, 0)
 
@@ -169,11 +149,10 @@ class SnakeEnv:
             pygame.draw.rect(self.window, color, rect)
 
     def draw_food(self):
-        for (x, y) in self.food_positions:
-            rect = pygame.Rect(x, y, self.BLOCK_SIZE, self.BLOCK_SIZE)
-            
-            pygame.draw.rect(self.window, (255, 0, 0), rect)
-
+        x, y = self.food
+        rect = pygame.Rect(x, y, self.BLOCK_SIZE, self.BLOCK_SIZE)
+        
+        pygame.draw.rect(self.window, (255, 0, 0), rect)
 
     def move_snake(self):
 
@@ -196,15 +175,12 @@ class SnakeEnv:
         if new_head == self.food:
             self.snake_size += 1
             self.randomize_food()
-
+ 
         if len(self.snake_body) > self.snake_size:
             self.snake_body.pop()
 
     def display_score(self):
         self.window.blit(self.font.render("Score: " + str(self.snake_size - self.STARTING_SIZE), True, 'white'), (0, 0))
-
-
-
 
 # ------- MANUAL Snake -------
 

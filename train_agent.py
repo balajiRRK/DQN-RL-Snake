@@ -13,15 +13,16 @@ import time
 
 # Hyperparameters
 GAMMA = 0.99
-LR = 1e-3
-BATCH_SIZE = 64
-MEMORY_SIZE = 10000
+LR = 1e-4
+BATCH_SIZE = 32
+MEMORY_SIZE = 50000
 EPSILON_START = 1.0
 EPSILON_END = 0.05
-EPSILON_DECAY = 0.999
-TARGET_UPDATE_FREQ = 10
-EPISODES = 3000
-
+EPSILON_DECAY = 0.995
+TARGET_UPDATE_FREQ = 100
+EPISODES = 1000
+        
+LOG_INTERVAL = 100
 RENDER_EVERY = 50
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -62,14 +63,32 @@ class DQN(nn.Module):
 class ReplayMemory:
     def __init__(self, capacity):
         self.buffer = deque(maxlen=capacity)
-
+        self.positive_buffer = deque(maxlen=15000) # Store good experiences longer
+        
     def push(self, transition):
-        # transition = (state, action, reward, next_state, done)
+        state, action, reward, next_state, done = transition
         self.buffer.append(transition)
-
+        
+        # Keep positive rewards (food eaten) in separate buffer
+        if reward > 3:  # Food reward is +10 and lets say -0.5 from 50 steps and -5 from death so 4.5, so this catches food-eating experiences
+            self.positive_buffer.append(transition)
+    
     def sample(self, batch_size):
-        return random.sample(self.buffer, batch_size)
-
+        # If we have positive experiences, include more of them in the batch
+        if len(self.positive_buffer) > 0:
+            # Sample 60% from regular buffer, 40% from positive buffer
+            regular_size = int(batch_size * 0.6)
+            positive_size = min(batch_size - regular_size, len(self.positive_buffer))
+            remaining_size = batch_size - positive_size
+            
+            regular_sample = random.sample(self.buffer, min(remaining_size, len(self.buffer)))
+            positive_sample = random.sample(self.positive_buffer, positive_size)
+            
+            return regular_sample + positive_sample
+        else:
+            # Fall back to regular sampling if no positive experiences yet
+            return random.sample(self.buffer, min(batch_size, len(self.buffer)))
+    
     def __len__(self):
         return len(self.buffer)
     
@@ -104,7 +123,7 @@ def train(model_path=None):
     all_scores = []
     all_losses = []
 
-    for episode in range(EPISODES):
+    for episode in range(EPISODES+1):
         obs = env.reset()
         total_reward = 0
         steps_since_last_fruit = 0
@@ -182,7 +201,7 @@ def train(model_path=None):
                     steps_since_last_fruit += 1
 
                 if steps_since_last_fruit > 100:
-                    print(f"Episode {episode} ended due to performing {steps_since_last_fruit} without touching food.")
+                    print(f"Episode {episode} ended due to performing {steps_since_last_fruit} steps without touching food.")
                     done = True
             
         score = env.snake_size - env.STARTING_SIZE
@@ -197,7 +216,13 @@ def train(model_path=None):
             target_net.load_state_dict(policy_net.state_dict())
 
         epsilon = max(EPSILON_END, epsilon * EPSILON_DECAY)
+
         print(f"Episode {episode}, Total reward: {round(total_reward, 2)}, Score: {score}, Epsilon: {epsilon:.3f}")
+
+        if episode % LOG_INTERVAL == 0:
+            recent_scores = all_scores[-LOG_INTERVAL:] if len(all_scores) >= LOG_INTERVAL else all_scores
+            avg_recent_score = np.mean(recent_scores)
+            print(f"Episode {episode}, Recent {LOG_INTERVAL}-episode average: {avg_recent_score:.2f}, Current epsilon: {epsilon:.3f}")
 
         # NOTE: only saves best score episode AMONG the few ones recorded...
         if render and score > best_rendered_score:
