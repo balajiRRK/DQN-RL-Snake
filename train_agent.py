@@ -17,10 +17,10 @@ LR = 1e-4
 BATCH_SIZE = 32
 MEMORY_SIZE = 50000
 EPSILON_START = 1.0
-EPSILON_END = 0.05
-EPSILON_DECAY = 0.995
+EPSILON_END = 0.01
+EPSILON_DECAY = 0.9995
 TARGET_UPDATE_FREQ = 100
-EPISODES = 1000
+EPISODES = 10000
         
 LOG_INTERVAL = 100
 RENDER_EVERY = 50
@@ -266,7 +266,7 @@ def train(model_path=None):
         elapsed = time.time() - start_time
         minutes, seconds = divmod(int(elapsed), 60)
         
-        training_info = f"Training Time: {minutes}m {seconds}s | Episodes: {EPISODES} | Best Score: {best_score}"
+        training_info = f"Training Time: {minutes}m {seconds}s | Episodes: {EPISODES} | Best Score: {best_score} | Epsilon Decay: {EPSILON_DECAY}"
         fig.suptitle(f"Snake AI Training Results - {training_info}", fontsize=12, y=0.98)   
 
         plt.tight_layout()
