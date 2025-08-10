@@ -20,7 +20,7 @@ EPSILON_START = 1.0
 EPSILON_END = 0.05
 EPSILON_DECAY = 0.995
 TARGET_UPDATE_FREQ = 100
-EPISODES = 3000
+EPISODES = 1000
         
 LOG_INTERVAL = 100
 RENDER_EVERY = 50
@@ -36,23 +36,23 @@ class DQN(nn.Module):
         # Our observation is now 4 channels (body, head, food, direction).
         # So Conv2d must expect in_channels=4.
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels=4, out_channels=32, kernel_size=3, padding=1),  # -> (32, grid_h, grid_w)
+            nn.Conv2d(in_channels=4, out_channels=16, kernel_size=3, padding=1),  # -> (16, grid_h, grid_w)
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),                            # -> (64, grid_h, grid_w)
+            nn.Conv2d(16, 32, kernel_size=3, padding=1),                            # -> (32, grid_h, grid_w)
             nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),                            # -> (64, grid_h, grid_w)
+            nn.Conv2d(32, 32, kernel_size=3, padding=1),                            # -> (32, grid_h, grid_w)
             nn.ReLU()
         )
         
         # AFTER these three conv layers (with padding=1), the spatial dimensions remain (grid_h × grid_w).
         # Therefore the flattened size is:
-        conv_output_size = 64 * grid_h * grid_w
+        conv_output_size = 32 * grid_h * grid_w
 
         self.fc = nn.Sequential(
-            nn.Flatten(),                      # Flattens (batch, 64, grid_h, grid_w) -> (batch, 64*grid_h*grid_w)
-            nn.Linear(conv_output_size, 512),  # Now uses the *actual* conv_output_size, not a hard-coded 25600
+            nn.Flatten(),                      # Flattens (batch, 32, grid_h, grid_w) -> (batch, 32*grid_h*grid_w)
+            nn.Linear(conv_output_size, 256),  # Now uses the *actual* conv_output_size, not a hard-coded 25600
             nn.ReLU(),
-            nn.Linear(512, n_actions)          # One Q-value per action
+            nn.Linear(256, n_actions)          # One Q-value per action
         )
 
     def forward(self, x):
