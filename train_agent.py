@@ -69,7 +69,7 @@ class ReplayMemory:
         state, action, reward, next_state, done = transition
         self.buffer.append(transition)
         
-        # Keep positive rewards (food eaten) in separate buffer
+        # Keep positive rewards in separate buffer
         if reward > 3:  # Food reward is +10 and lets say -0.5 from 50 steps and -5 from death so 4.5, so this catches food-eating experiences
             self.positive_buffer.append(transition)
     
@@ -178,8 +178,13 @@ def train(model_path=None):
                     #1 Forward pass
                     q_values = policy_net(obs_batch).gather(1, action_batch)
                     with torch.no_grad():
-                        max_next_q = target_net(next_obs_batch).max(1)[0].unsqueeze(1)
-                        target_q = reward_batch + GAMMA * max_next_q * (1 - done_batch)
+                        # Select best actions using policy_net
+                        best_next_actions = policy_net(next_obs_batch).argmax(1).unsqueeze(1)  # (batch, 1)
+                        
+                        # Evaluate those actions using target_net
+                        target_q_values = target_net(next_obs_batch).gather(1, best_next_actions)
+                        
+                        target_q = reward_batch + GAMMA * target_q_values * (1 - done_batch)
 
                     #2 Calculate loss
                     loss = nn.MSELoss()(q_values, target_q)
