@@ -103,9 +103,8 @@ def train(model_path=None):
     policy_net = DQN(grid_h, grid_w, n_actions).to(device)
     target_net = DQN(grid_h, grid_w, n_actions).to(device)
 
-    if model_path is not None:
-        print(f"Loading model from: {model_path}")
-        policy_net.load_state_dict(torch.load(model_path, map_location=device))
+
+
 
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval()
@@ -113,24 +112,42 @@ def train(model_path=None):
     optimizer = optim.Adam(policy_net.parameters(), lr=LR)
     memory = ReplayMemory(MEMORY_SIZE)
 
-    epsilon = 0 if model_path is not None else EPSILON_START # can replace this line with epsilon = EPSILON_START to continue training a pre-trained model rather than testing with eps = 0
+    epsilon = EPSILON_START
 
-    best_rendered_score = -float('inf')
-    best_score = -float('inf')
-    video_filename = 'best_snake_episode.mp4'
-    model_save_path = "best_dqn_model.pth"
+    best_rendered_score = -float("inf")
+    best_score = -float("inf")
+    video_filename = "best_snake_episode.mp4"
+    model_save_path = "best_model.pth"
+    checkpoint_save_path = "training_checkpoint.pth"
 
     all_scores = []
     all_losses = []
 
+    if model_path is not None:
+        print(f"Loading model from file: {model_path}")
+        checkpoint = torch.load(checkpoint_save_path, map_location=device)
+
+        policy_net.load_state_dict(checkpoint["policy_net_state"])
+        target_net.load_state_dict(checkpoint["target_net_state"])
+        optimizer.load_state_dict(checkpoint["optimizer_state"])
+        
+        all_scores = checkpoint.get("scores", [])
+        all_losses = checkpoint.get("losses", [])
+        start_episode = checkpoint.get("episode", 0) + 1
+
+        continued_training_episode = start_episode # mark where we resumed training
+    else:
+        start_episode = 0
+        continued_training_episode = None
+
     try: 
-        for episode in range(EPISODES+1):
+        for episode in range(start_episode, EPISODES + start_episode + 1):
             obs = env.reset()
             total_reward = 0
             steps_since_last_fruit = 0
             done = False
 
-            render = (episode % RENDER_EVERY == 0)
+            render = episode % RENDER_EVERY == 0
             frames = []
             episode_losses = []
 
@@ -138,7 +155,7 @@ def train(model_path=None):
 
                 if render:
                     pygame.event.pump()
-                    env.window.fill('black')
+                    env.window.fill("black")
                     env.draw_snake()
                     env.draw_food()
                     env.display_score()
@@ -207,7 +224,7 @@ def train(model_path=None):
                         steps_since_last_fruit += 1
 
                     if steps_since_last_fruit > 100:
-                        print(f"Episode {episode} ended due to performing {steps_since_last_fruit} steps without touching food.")
+                        print(f"Episode {episode} ended due to performing {steps_since_last_fruit} steps without touching food")
                         done = True
                 
             score = env.snake_size - env.STARTING_SIZE
@@ -233,16 +250,25 @@ def train(model_path=None):
             # NOTE: only saves best score episode AMONG the few ones recorded...
             if render and score > best_rendered_score:
                 best_rendered_score = score
-                print(f"New best score {best_rendered_score} at episode {episode}. Saving video...")
+                print(f"New best video score {best_rendered_score} at episode {episode}. Saving video...")
                 imageio.mimwrite(video_filename, frames, fps=15, codec='libx264', quality=8)
             
             if score > best_score: # best total score among all episodes
                 best_score = score
-                print(f"New best model score: {best_score}. Saving model weights...")
-                torch.save(policy_net.state_dict(), model_save_path)
+                print(f"New best overall score: {best_score}")
     except KeyboardInterrupt:
-        print("\nTraining interrupted by user.\n")
+        print("\nTraining interrupted by user\n")
     finally:
+        torch.save(policy_net.state_dict(), model_save_path) # save just the model for testing purposes
+        torch.save({
+            "episode": episode,
+            "policy_net_state": policy_net.state_dict(),
+            "target_net_state": target_net.state_dict(),
+            "optimizer_state": optimizer.state_dict(),
+            "scores": all_scores,
+            "losses": all_losses,
+        }, checkpoint_save_path) # save model and other info to continue training
+
         # After training complete:
         window = 50
         episodes = np.arange(len(all_scores))
@@ -252,16 +278,26 @@ def train(model_path=None):
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
 
         ax1.plot(episodes[len(episodes) - len(rolling_scores):], rolling_scores, label=f"Avg Score ({window}-episode window)")
+
+        if continued_training_episode is not None:
+            ax1.axvline(x=continued_training_episode, color='red', linestyle='--', linewidth=2, label="Continued Training Start Point")
+
         ax1.set_title("Smoothed Score per Episode")
         ax1.set_xlabel("Episode")
         ax1.set_ylabel("Score")
         ax1.grid(True)
 
         ax2.plot(episodes[len(episodes) - len(rolling_losses):], rolling_losses, label=f"Avg Loss ({window}-episode window)", color="orange")
+
+        if continued_training_episode is not None:
+            ax2.axvline(x=continued_training_episode, color='red', linestyle='--', linewidth=2, label="Continued Training Start")
+
         ax2.set_title("Smoothed Loss per Episode")
         ax2.set_xlabel("Episode")
         ax2.set_ylabel("Loss")
         ax2.grid(True)
+
+
 
         elapsed = time.time() - start_time
         minutes, seconds = divmod(int(elapsed), 60)
@@ -275,11 +311,67 @@ def train(model_path=None):
         print(f"\nTotal training time: {minutes} minutes and {seconds} seconds")
 
         print(f"\nBest score from a single episode in training: {best_score}")
+
+def test(model_path, episodes=50, render_every=1):
+    env = SnakeEnv()
+    grid_h, grid_w = env.grid_height, env.grid_width
+    n_actions = 4  # right, left, up, down
+    
+    policy_net = DQN(grid_h, grid_w, n_actions).to(device)
+    policy_net.load_state_dict(torch.load(model_path, map_location=device))
+    policy_net.eval()
+
+    video_filename = 'best_snake_episode.mp4'
+    best_rendered_score = -float('inf')
+
+    for episode in range(episodes):
+        obs = env.reset()
+        total_reward = 0
+        done = False
         
+        frames = []
+        render = episode % render_every == 0
+ 
+        while not done:
+            pygame.event.pump()
+            env.window.fill('black')
+            env.draw_snake()
+            env.draw_food()
+            env.display_score()
+            pygame.display.flip()
+            env.clock.tick(15)
+
+            # Choose best action without exploration
+            with torch.no_grad():
+                obs_tensor = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
+                action = policy_net(obs_tensor).argmax().item()
+            
+            obs, reward, done = env.step(action)
+            total_reward += reward
+
+            if render:
+                frame = pygame.surfarray.array3d(env.window)
+                frame = frame.transpose([1, 0, 2]) # transpose (Width, Height, Channel) to (Height, Width, Channel)
+                frames.append(frame)
+
+        score = env.snake_size - env.STARTING_SIZE
+        print(f"Episode {episode}, Total reward: {round(total_reward, 2)}, Score: {score}")
+
+        # NOTE: only saves best score episode AMONG the (potentially) few ones recorded...
+        if render and score > best_rendered_score:
+            best_rendered_score = score
+            print(f"New best score {best_rendered_score} at episode {episode}. Saving video...")
+            imageio.mimwrite(video_filename, frames, fps=15, codec='libx264', quality=8)
+
 if __name__ == "__main__":
+    mode = "test" # "train" or "test"
+    model_path_arg = sys.argv[2] if len(sys.argv) > 1 else None # assign model path if given or set to None if not
+
     try:
-        model_path = sys.argv[1] if len(sys.argv) > 1 else None # assign model path if given or set to None if not
-        train(model_path)
+        if mode == "train":
+            train(model_path_arg)
+        elif mode == "test":
+            test(model_path_arg)
     except KeyboardInterrupt:
-        print("\nTraining interrupted by user.")
+        print("\nProcess interrupted by user")
         pygame.quit()
