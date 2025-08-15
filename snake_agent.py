@@ -297,13 +297,14 @@ def train(model_path=None):
         ax2.set_ylabel("Loss")
         ax2.grid(True)
 
-
-
         elapsed = time.time() - start_time
         minutes, seconds = divmod(int(elapsed), 60)
         
         training_info = f"Training Time: {minutes}m {seconds}s | Episodes: {EPISODES} | Best Score: {best_score} | Epsilon Decay: {EPSILON_DECAY}"
         fig.suptitle(f"Snake AI Training Results - {training_info}", fontsize=12, y=0.98)   
+
+        ax1.legend()
+        ax2.legend()
 
         plt.tight_layout()
         plt.savefig("training_metrics.png")
