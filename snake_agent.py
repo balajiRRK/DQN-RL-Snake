@@ -18,9 +18,8 @@ BATCH_SIZE = 32
 MEMORY_SIZE = 50000
 EPSILON_START = 1.0
 EPSILON_END = 0.01
-EPSILON_DECAY = 0.9995
 TARGET_UPDATE_FREQ = 100
-EPISODES = 10000
+EPISODES = 1000
         
 LOG_INTERVAL = 100
 RENDER_EVERY = 50
@@ -92,7 +91,7 @@ class ReplayMemory:
     def __len__(self):
         return len(self.buffer)
     
-def train(model_path=None):
+def train(model_path=None, epsilon_decay=0.99975):
 
     start_time = time.time()
 
@@ -103,16 +102,11 @@ def train(model_path=None):
     policy_net = DQN(grid_h, grid_w, n_actions).to(device)
     target_net = DQN(grid_h, grid_w, n_actions).to(device)
 
-
-
-
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval()
 
     optimizer = optim.Adam(policy_net.parameters(), lr=LR)
     memory = ReplayMemory(MEMORY_SIZE)
-
-    epsilon = EPSILON_START
 
     best_rendered_score = -float("inf")
     best_score = -float("inf")
@@ -125,23 +119,39 @@ def train(model_path=None):
 
     if model_path is not None:
         print(f"Loading model from file: {model_path}")
-        checkpoint = torch.load(checkpoint_save_path, map_location=device)
+        checkpoint = torch.load(model_path, map_location=device, weights_only=False) # Don't run with untrusted files
 
-        policy_net.load_state_dict(checkpoint["policy_net_state"])
-        target_net.load_state_dict(checkpoint["target_net_state"])
-        optimizer.load_state_dict(checkpoint["optimizer_state"])
-        
-        all_scores = checkpoint.get("scores", [])
-        all_losses = checkpoint.get("losses", [])
-        start_episode = checkpoint.get("episode", 0) + 1
+        if isinstance(checkpoint, dict) and "policy_net_state" in checkpoint:
+            print("Model weights and additional training details found from file: {model_path}")
+            policy_net.load_state_dict(checkpoint["policy_net_state"])
+            target_net.load_state_dict(checkpoint["target_net_state"])
+            optimizer.load_state_dict(checkpoint["optimizer_state"])
+            epsilon = 0.2
+            EPSILON_DECAY = 0.998
+            
+            all_scores = checkpoint.get("scores", [])
+            all_losses = checkpoint.get("losses", [])
+            resume_training_points = checkpoint.get("resume_training_points", [0])
+            start_episode = len(all_scores)
 
-        continued_training_episode = start_episode # mark where we resumed training
+            resume_training_points.append(start_episode)
+        else:
+            print("Only model weights found from file: {model_path}")
+            policy_net.load_state_dict(checkpoint)
+            target_net.load_state_dict(checkpoint)
+            optimizer = optim.Adam(policy_net.parameters(), lr=LR)
+            all_scores, all_losses = [], []
+            resume_training_points = [0]
+            start_episode = 0
+            epsilon = 0.2
+            EPSILON_DECAY = 0.998
     else:
         start_episode = 0
-        continued_training_episode = None
+        resume_training_points = [0]
+        epsilon = EPSILON_START
 
     try: 
-        for episode in range(start_episode, EPISODES + start_episode + 1):
+        for episode in range(start_episode, EPISODES + start_episode):
             obs = env.reset()
             total_reward = 0
             steps_since_last_fruit = 0
@@ -261,12 +271,13 @@ def train(model_path=None):
     finally:
         torch.save(policy_net.state_dict(), model_save_path) # save just the model for testing purposes
         torch.save({
-            "episode": episode,
             "policy_net_state": policy_net.state_dict(),
             "target_net_state": target_net.state_dict(),
             "optimizer_state": optimizer.state_dict(),
             "scores": all_scores,
             "losses": all_losses,
+            "resume_training_points": resume_training_points,
+
         }, checkpoint_save_path) # save model and other info to continue training
 
         # After training complete:
@@ -279,9 +290,6 @@ def train(model_path=None):
 
         ax1.plot(episodes[len(episodes) - len(rolling_scores):], rolling_scores, label=f"Avg Score ({window}-episode window)")
 
-        if continued_training_episode is not None:
-            ax1.axvline(x=continued_training_episode, color='red', linestyle='--', linewidth=2, label="Continued Training Start Point")
-
         ax1.set_title("Smoothed Score per Episode")
         ax1.set_xlabel("Episode")
         ax1.set_ylabel("Score")
@@ -289,8 +297,22 @@ def train(model_path=None):
 
         ax2.plot(episodes[len(episodes) - len(rolling_losses):], rolling_losses, label=f"Avg Loss ({window}-episode window)", color="orange")
 
-        if continued_training_episode is not None:
-            ax2.axvline(x=continued_training_episode, color='red', linestyle='--', linewidth=2, label="Continued Training Start")
+        # after you plot curves on ax1 and ax2:
+        if len(resume_training_points) > 1:
+            # label just the first resume line so the legend isn't spammy
+            first = True
+            for i, ep in enumerate(resume_training_points[1:], start=1):  # skip the initial 0
+                label = "Continued Training Start" if first else None
+                ax1.axvline(x=ep, color='red', linestyle='--', linewidth=2, label=label)
+                ax2.axvline(x=ep, color='red', linestyle='--', linewidth=2, label=label if first else None)
+                first = False
+
+                # Optional: add tiny vertical labels near the top of the axes (axis-relative y=0.95)
+                ax1.text(ep, 0.95, f"Resume #{i}", rotation=90, va='top', ha='right',
+                        color='red', transform=ax1.get_xaxis_transform())
+                ax2.text(ep, 0.95, f"Resume #{i}", rotation=90, va='top', ha='right',
+                        color='red', transform=ax2.get_xaxis_transform())
+
 
         ax2.set_title("Smoothed Loss per Episode")
         ax2.set_xlabel("Episode")
@@ -365,14 +387,24 @@ def test(model_path, episodes=50, render_every=1):
             imageio.mimwrite(video_filename, frames, fps=15, codec='libx264', quality=8)
 
 if __name__ == "__main__":
-    mode = "test" # "train" or "test"
-    model_path_arg = sys.argv[2] if len(sys.argv) > 1 else None # assign model path if given or set to None if not
+
+    if len(sys.argv) < 2:
+        print("Usage: python script.py <train|test> <model_weights_filename>.pth")
+        sys.exit(1)
+
+    mode = sys.argv[1]
+    model_path_arg = sys.argv[2] if len(sys.argv) > 2 else None
 
     try:
         if mode == "train":
             train(model_path_arg)
         elif mode == "test":
+            if model_path_arg is None:
+                print("Error: Please provide a model path for testing")
+                sys.exit(1)
             test(model_path_arg)
+        else:
+            print("Error: Invalid mode, use either \"train\" or \"test\"")
     except KeyboardInterrupt:
         print("\nProcess interrupted by user")
         pygame.quit()
