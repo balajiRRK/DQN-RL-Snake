@@ -151,7 +151,7 @@ def train(model_path=None, epsilon_decay=0.99975):
         epsilon = EPSILON_START
 
     try: 
-        for episode in range(start_episode, EPISODES + start_episode):
+        for episode in range(start_episode, EPISODES + start_episode + 1):
             obs = env.reset()
             total_reward = 0
             steps_since_last_fruit = 0
@@ -322,7 +322,7 @@ def train(model_path=None, epsilon_decay=0.99975):
         elapsed = time.time() - start_time
         minutes, seconds = divmod(int(elapsed), 60)
         
-        training_info = f"Training Time: {minutes}m {seconds}s | Episodes: {EPISODES} | Best Score: {best_score} | Epsilon Decay: {EPSILON_DECAY}"
+        training_info = f"Training Time: {minutes}m {seconds}s | Episodes: {episode} | Best Score: {best_score} | Epsilon Decay: {EPSILON_DECAY}"
         fig.suptitle(f"Snake AI Training Results - {training_info}", fontsize=12, y=0.98)   
 
         ax1.legend()
