@@ -13,8 +13,8 @@ import time
 
 # Hyperparameters
 GAMMA = 0.99
-LR = 1e-4
-BATCH_SIZE = 32
+LR = 2e-4
+BATCH_SIZE = 64
 MEMORY_SIZE = 50000
 EPSILON_START = 1.0
 EPSILON_DECAY = 0.99975
@@ -35,24 +35,23 @@ class DQN(nn.Module):
         
         # Our observation is now 4 channels (body, head, food, direction).
         # So Conv2d must expect in_channels=4.
+        # 2 Conv layers (2 calls to Conv2d) since its generally enough for small grid RL and 
+        # adding more only helps each receptive field see more of the board at a time but when u flatten
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels=4, out_channels=16, kernel_size=3, padding=1),  # -> (16, grid_h, grid_w)
+            nn.Conv2d(in_channels=4, out_channels=32, kernel_size=3, padding=1), # Layer 1
             nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),                            # -> (32, grid_h, grid_w)
+            nn.Conv2d(32, 64, kernel_size=3, padding=1), # Layer 2
             nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, padding=1),                            # -> (32, grid_h, grid_w)
-            nn.ReLU()
         )
         
-        # AFTER these three conv layers (with padding=1), the spatial dimensions remain (grid_h × grid_w).
-        # Therefore the flattened size is:
-        conv_output_size = 32 * grid_h * grid_w
+        # AFTER these 2 conv layers (with padding=1), the spatial dimensions remain (grid_h × grid_w).
+        conv_output_size = 64 * grid_h * grid_w
 
         self.fc = nn.Sequential(
-            nn.Flatten(),                      # Flattens (batch, 32, grid_h, grid_w) -> (batch, 32*grid_h*grid_w)
-            nn.Linear(conv_output_size, 256),  # Now uses the *actual* conv_output_size, not a hard-coded 25600
+            nn.Flatten(),                      # Flattens (batch, 64, grid_h, grid_w) -> (batch, 64*grid_h*grid_w)
+            nn.Linear(conv_output_size, 512),  # Now uses the *actual* conv_output_size, not a hard-coded 25600
             nn.ReLU(),
-            nn.Linear(256, n_actions)          # One Q-value per action
+            nn.Linear(512, n_actions)          # Q-values for each action
         )
 
     def forward(self, x):
@@ -166,18 +165,18 @@ def train(model_path=None):
 
             while not done:
 
-                if render:
-                    pygame.event.pump()
-                    env.window.fill("black")
-                    env.draw_snake()
-                    env.draw_food()
-                    env.display_score()
-                    pygame.display.flip()
-                    env.clock.tick(30)
+                # if render:
+                #     pygame.event.pump()
+                #     env.window.fill("black")
+                #     env.draw_snake()
+                #     env.draw_food()
+                #     env.display_score()
+                #     pygame.display.flip()
+                #     env.clock.tick(30)
 
-                    frame = pygame.surfarray.array3d(env.window)
-                    frame = frame.transpose([1, 0, 2]) # transpose (Width, Height, Channel) to (Height, Width, Channel)
-                    frames.append(frame) 
+                #     frame = pygame.surfarray.array3d(env.window)
+                #     frame = frame.transpose([1, 0, 2]) # transpose (Width, Height, Channel) to (Height, Width, Channel)
+                #     frames.append(frame) 
 
                 # choose between random action and policy net action
                 if random.random() < epsilon:

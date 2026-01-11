@@ -94,32 +94,23 @@ class SnakeEnv:
         done = False
         x, y = new_head
 
-        # incentivize moving snake closer to food
-        food_x, food_y = self.food
-        old_distance_to_food = abs(old_x - food_x) + abs(old_y - food_y)
-        new_distance_to_food = abs(x - food_x) + abs(y - food_y)
-        if old_distance_to_food > new_distance_to_food:
-            reward += 0.1
-        else:
-            reward -= 0.1
-
         x, y = new_head
         if x < 0 or x >= self.SCREEN_WIDTH or y < 0 or y >= self.SCREEN_HEIGHT:
             self.snake_alive = False
-            reward -= 5
+            reward -= 3
             done = True
 
         # check if new head collisions with body before insertion
         elif new_head in self.snake_body:
             self.snake_alive = False
-            reward -= 5
+            reward -= 3
             done = True
         else:
             self.snake_body.insert(0, new_head)
 
             if new_head == self.food:
                 self.snake_size += 1
-                reward += 15
+                reward += 1
                 self.randomize_food()
             else:
                 if len(self.snake_body) > self.snake_size:
