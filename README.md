@@ -5,7 +5,7 @@ This project implements a Deep Q-Network with a Convolutional Neural Network to 
 There are two pre-trained model files included: `best_model.pth`, which contains only the trained model weights and `training_checkpoint.pth`, which includes the model weights along with additional training data to allow you to resume training. Both were trained using Google Colab's Cloud NVIDIA L4 Tensor Core GPU for ~6 hours over 20,000 episodes, achieving an average score of ~35 and a peak score of 60.
 
 Below is a visualization of key metrics logged during training that the program creates once the training is completed:
-<img width="1000" height="800" alt="training_metrics" src="https://github.com/user-attachments/assets/252faeab-c8b4-43c1-ab2b-8f5ad29ba47a" />
+<img width="1000" height="800" alt="training_metrics" src="https://github.com/user-attachments/assets/b59b8fe0-fa4e-4aa2-b8d4-b9f5fdc7ea01" />
 
 ## Installation
 
