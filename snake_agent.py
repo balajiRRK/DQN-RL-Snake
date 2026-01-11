@@ -17,9 +17,10 @@ LR = 1e-4
 BATCH_SIZE = 32
 MEMORY_SIZE = 50000
 EPSILON_START = 1.0
+EPSILON_DECAY = 0.99975
 EPSILON_END = 0.01
 TARGET_UPDATE_FREQ = 100
-EPISODES = 1000
+EPISODES = 20000
         
 LOG_INTERVAL = 100
 RENDER_EVERY = 50
@@ -91,9 +92,11 @@ class ReplayMemory:
     def __len__(self):
         return len(self.buffer)
     
-def train(model_path=None, epsilon_decay=0.99975):
+def train(model_path=None):
 
     start_time = time.time()
+
+    epsilon_decay = EPSILON_DECAY
 
     env = SnakeEnv()
     grid_h, grid_w = env.grid_height, env.grid_width
@@ -127,7 +130,7 @@ def train(model_path=None, epsilon_decay=0.99975):
             target_net.load_state_dict(checkpoint["target_net_state"])
             optimizer.load_state_dict(checkpoint["optimizer_state"])
             epsilon = 0.2
-            EPSILON_DECAY = 0.998
+            epsilon_decay = 0.998
             
             all_scores = checkpoint.get("scores", [])
             all_losses = checkpoint.get("losses", [])
@@ -144,7 +147,7 @@ def train(model_path=None, epsilon_decay=0.99975):
             resume_training_points = [0]
             start_episode = 0
             epsilon = 0.2
-            EPSILON_DECAY = 0.998
+            epsilon_decay = 0.998
     else:
         start_episode = 0
         resume_training_points = [0]
@@ -248,7 +251,7 @@ def train(model_path=None, epsilon_decay=0.99975):
             if episode % TARGET_UPDATE_FREQ == 0:
                 target_net.load_state_dict(policy_net.state_dict())
 
-            epsilon = max(EPSILON_END, epsilon * EPSILON_DECAY)
+            epsilon = max(EPSILON_END, epsilon * epsilon_decay)
 
             print(f"Episode {episode}, Total reward: {round(total_reward, 2)}, Score: {score}, Epsilon: {epsilon:.3f}")
 
@@ -322,7 +325,7 @@ def train(model_path=None, epsilon_decay=0.99975):
         elapsed = time.time() - start_time
         minutes, seconds = divmod(int(elapsed), 60)
         
-        training_info = f"Training Time: {minutes}m {seconds}s | Episodes: {episode - start_episode} | Best Score: {best_score} | Epsilon Decay: {EPSILON_DECAY}"
+        training_info = f"Training Time: {minutes}m {seconds}s | Episodes: {episode - start_episode} | Best Score: {best_score} | Epsilon Decay: {epsilon_decay}"
         fig.suptitle(f"Snake AI Training Results - {training_info}", fontsize=12, y=0.98)   
 
         ax1.legend()
