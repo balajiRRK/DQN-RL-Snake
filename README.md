@@ -18,17 +18,17 @@ pip install -r requirements.txt
 
 To train a new model:
 ```
-py snake_agent.py train
+python snake_agent.py train
 ```
 
 To continue training a saved model:
 ```
-py snake_agent.py train <model_weights_filename>.pth
+python snake_agent.py train <model_weights_filename>.pth
 ```
 
 To test a saved model:
 ```
-py snake_agent.py test <model_weights_filename>.pth
+python snake_agent.py test <model_weights_filename>.pth
 ```
 
 Additionally, you can also modify the hyperparameters or constants in `snake_agent.py` file such as RENDER_EVERY to either speed up training by reducing the frequency of rendering being done or you can slow down training but improve visualization potentially for debugging purposes by increasing the frequency of rendering. 
