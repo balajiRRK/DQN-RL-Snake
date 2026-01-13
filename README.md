@@ -1,4 +1,4 @@
-# An RL trained Snake Agent
+# Deep Reinforcement Learning Snake Game AI
 
 This project implements a Deep Q-Network with a Convolutional Neural Network to learn and play the classic Snake game. Built with PyTorch and Pygame, the agent learns through interaction with the Snake game environment through repetitive play where it fine-tunes its policy to achieve better results. The training process includes model checkpointing, gameplay recording, epsilon-greedy exploration, logging key metrics and performance visualization with rolling averages of score and loss.
 
